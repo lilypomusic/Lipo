@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Submit your track</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+      h1 { margin-bottom: 8px; }
+      form { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 16px 0 24px; }
+      textarea { width: 100%; height: 80px; }
+      button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ddd; cursor: pointer; }
+      #queue { border-top: 1px solid #eee; padding-top: 16px; }
+      .item { padding: 10px 0; border-bottom: 1px solid #f2f2f2; }
+    </style>
+  </head>
+  <body>
+    <h1>Submit your track</h1>
+
+    <form id="upload-form">
+      <input type="file" id="file" accept="audio/*,video/*" />
+      <textarea id="note" placeholder="Message (optional)"></textarea>
+      <button type="submit">Submit (no payment yet)</button>
+    </form>
+
+    <h2>Queue (pending + accepted)</h2>
+    <div id="queue"></div>
+
+    <!-- load our JS (plain .js, not .rtf) -->
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
