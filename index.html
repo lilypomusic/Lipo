@@ -1,32 +1,123 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Submit your track</title>
-    <style>
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; }
-      h1 { margin-bottom: 8px; }
-      form { display: grid; grid-template-columns: 1fr; gap: 12px; margin: 16px 0 24px; }
-      textarea { width: 100%; height: 80px; }
-      button { padding: 10px 14px; border-radius: 8px; border: 1px solid #ddd; cursor: pointer; }
-      #queue { border-top: 1px solid #eee; padding-top: 16px; }
-      .item { padding: 10px 0; border-bottom: 1px solid #f2f2f2; }
-    </style>
-  </head>
-  <body>
-    <h1>Submit your track</h1>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Submit your track (diagnostic)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: system-ui; max-width: 720px; margin: 40px auto; padding: 0 16px; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:16px; margin:12px 0; }
+    button { padding:10px 14px; border-radius:8px; border:0; cursor:pointer; margin-right:8px; }
+    input, textarea { width:100%; padding:10px; margin:8px 0; border:1px solid #ddd; border-radius:8px; }
+    #log { white-space: pre-wrap; color:#222; background:#f8f8f8; padding:10px; border-radius:8px; }
+  </style>
+</head>
+<body>
+  <h1>Submit your track (diagnostic)</h1>
 
-    <form id="upload-form">
-      <input type="file" id="file" accept="audio/*,video/*" />
-      <textarea id="note" placeholder="Message (optional)"></textarea>
-      <button type="submit">Submit (no payment yet)</button>
-    </form>
+  <div class="card">
+    <input id="file" type="file" />
+    <textarea id="message" rows="3" placeholder="Message (optional)"></textarea>
+    <div>
+      <button id="btnUploadOnly">1) Upload ONLY</button>
+      <button id="btnFull">2) Upload + Save to DB</button>
+    </div>
+    <div id="log">Ready.</div>
+  </div>
 
-    <h2>Queue (pending + accepted)</h2>
-    <div id="queue"></div>
+  <h2>Queue (pending + accepted)</h2>
+  <div id="queue"></div>
 
-    <!-- load our JS (plain .js, not .rtf) -->
-    <script type="module" src="./main.js"></script>
-  </body>
+<script>
+const SUPABASE_URL = "https://imcdogitkzynrxcfgezw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImltY2RvZ2l0a3p5bnJ4Y2ZnZXp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk1ODM1NDcsImV4cCI6MjA3NTE1OTU0N30.5wSCcFEkOraoWOFkOY8BSfu-lrTzUiyzOTihUTEz03w";
+
+const log = (m)=>{ const el=document.getElementById('log'); el.textContent = m; console.log(m); };
+
+async function db(path, opts={}){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...opts,
+    headers:{
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      Prefer: "return=representation",
+      ...(opts.headers||{})
+    }
+  });
+  if(!res.ok){ throw new Error(`DB ${res.status}: ${await res.text()}`); }
+  return res.json();
+}
+
+async function upload(file){
+  const name = `${Date.now()}_${file.name}`;
+  const base = SUPABASE_URL; // already like https://...supabase.co
+  const res = await fetch(`${base}/storage/v1/object/submissions/${encodeURIComponent(name)}`, {
+    method:"POST",
+    headers:{
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      "content-type": file.type || "application/octet-stream"
+    },
+    body: file
+  });
+  if(!res.ok){ throw new Error(`UPLOAD ${res.status}: ${await res.text()}`); }
+  return `${base}/storage/v1/object/public/submissions/${encodeURIComponent(name)}`;
+}
+
+async function insertRow({file_url, message}){
+  return db("submissions", {
+    method:"POST",
+    headers:{ "content-type":"application/json" },
+    body: JSON.stringify([{ file_url, message }])
+  });
+}
+
+async function fetchQueue(){
+  return db("submissions?select=*&status=in.(pending,accepted)&order=created_at.desc");
+}
+
+function esc(s){return (s||"").replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+async function renderQueue(){
+  try {
+    const items = await fetchQueue();
+    document.getElementById('queue').innerHTML = items.map(it=>`
+      <div class="card">
+        <b>${(it.status||'pending').toUpperCase()}</b> — <small>${new Date(it.created_at).toLocaleString()}</small>
+        ${/\.mp3(\?|$)/i.test(it.file_url) ? `<audio controls style="width:100%" src="${it.file_url}"></audio>` : `<p><a href="${it.file_url}" target="_blank">Open file</a></p>`}
+        <p>${esc(it.message)}</p>
+      </div>
+    `).join('') || "<i>No items yet.</i>";
+  } catch(e){ log(e.message); }
+}
+
+document.getElementById('btnUploadOnly').onclick = async()=>{
+  const f = document.getElementById('file').files[0];
+  if(!f) return log("Pick a file first.");
+  try{
+    log("Uploading only...");
+    const url = await upload(f);
+    log("UPLOAD OK → " + url + "\n(Next click 'Upload + Save to DB')");
+  }catch(e){ log(e.message); }
+};
+
+document.getElementById('btnFull').onclick = async()=>{
+  const f = document.getElementById('file').files[0];
+  const message = document.getElementById('message').value.trim();
+  if(!f) return log("Pick a file first.");
+  try{
+    log("Uploading...");
+    const url = await upload(f);
+    log("Upload ok. Saving row...");
+    await insertRow({ file_url: url, message });
+    log("Done ✅");
+    document.getElementById('file').value = '';
+    document.getElementById('message').value = '';
+    renderQueue();
+  }catch(e){ log(e.message); }
+};
+
+renderQueue();
+</script>
+</body>
 </html>
